@@ -43,7 +43,7 @@ nav button.on{color:var(--ac)}
 <nav><button data-v="cust" onclick="go('cust')">Customers</button><button data-v="fu" onclick="go('fu')">Follow-ups</button><button data-v="trav" onclick="go('trav')">Travel</button><button data-v="set" onclick="go('set')">Settings</button></nav>
 <script>
 // ===== Firebase config: leave empty to test (data saves in this browser only). Paste your keys here later. =====
-const FB={apiKey:"",authDomain:"",projectId:"",appId:""};
+const FB={apiKey:"AIzaSyCERm19xWRzJP04ZVfCQpLbXyimttYoEu4",authDomain:"darling--report.firebaseapp.com",projectId:"darling--report",storageBucket:"darling--report.firebasestorage.app",messagingSenderId:"292179118125",appId:"1:292179118125:web:6017260687785229ec10a4"};
 
 const BR="AKMPOS1 PDYPOS1 TMGPOS1 ARNPOS1 KPMPOS1 KTRPOS1 KPDPOS1 TVMPOS1 VLRPOS1 EDPPOS1 KCPPOS1 KPTPOS1 OMLPOS1 PVLPOS1 SKIPOS1 SKNPOS1 KKCPOS1 VPMPOS3 MDVPOS1 NKLPOS1 SLMPOS3 TPTPOS1 VLRPOS3 TNRPOS1 TBMPOS1 CPTPOS2 CSLPOS1 KDRPOS1 KRGPOS2 PANRUTI RSPPOS1 SGRPOS1".split(" ");
 const RS=["Price","EB bill name issue","Subsidy confusion","Finance / loan","Roof / space","Comparing other vendors","Not responding","Family not agreeing","Other"];
@@ -67,10 +67,13 @@ function save(){
 }
 async function load(){
   let d=null;
-  if(db){const x=await db.doc("users/"+uid).get();d=x.exists?x.data():null}
+  let mig=false;
+  if(db){const x=await db.doc("users/"+uid).get();d=x.exists?x.data():null;
+    if(!d){d=JSON.parse(localStorage.getItem("chan")||"null");mig=!!d}}
   else d=JSON.parse(localStorage.getItem("chan")||"null");
   S=Object.assign(structuredClone(DEF),d||{});
   S.settings=Object.assign({},DEF.settings,(d&&d.settings)||{});
+  if(mig)save();
 }
 function loginView(){
   $("#app").innerHTML=`<h1 style="margin-top:40px">Chan's Report</h1><div class=card><label>Email<input id=em type=email></label><label>Password<input id=pw type=password></label><button onclick="auth(0)">Sign in</button> <button class=ghost onclick="auth(1)">Create account</button></div>`;
@@ -134,7 +137,7 @@ ${fld(c,"next","What to do next")}</div>`;
   const docs=`<h3>Documents</h3><div class=card>${c.docs.map((d,i)=>`<div class=row2><a href="#" onclick="openDoc('${c.id}',${i});return false">📄 ${esc(d.n)}</a><button class=x onclick="delDoc('${c.id}',${i})">×</button></div>`).join("")}
 <input type=file id=fi multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style="display:none" onchange="addFiles('${c.id}',this.files)">
 <div class=row><button class=ghost onclick="$('#fi').click()">+ Upload file</button><button class=ghost onclick="addDoc('${c.id}')">+ Drive link</button></div>
-<label>Uploaded files stay on this phone only. Drive links open anywhere.</label></div>`;
+<label id=up>${db?"Files save to the cloud. Max 5 MB each.":"Test mode: uploaded files stay on this phone only."}</label></div>`;
   const notes=`<h3>Updates</h3><div class=card><textarea id=nt placeholder="Today's update"></textarea><button onclick="addNote('${c.id}')">Add update</button>${[...c.notes].reverse().map(x=>`<p class=note><b>${fmt(x.d)}</b>${esc(x.t)}</p>`).join("")}</div>
 <button class=ghost style="color:var(--red)" onclick="delC('${c.id}')">Delete</button>`;
   return top+mid+docs+notes;
@@ -150,17 +153,56 @@ const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open("chanfiles",1);r.onup
 async function idbPut(k,v){const d=await idb();return new Promise((ok,no)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=ok;t.onerror=()=>no(t.error)})}
 async function idbGet(k){const d=await idb();return new Promise((ok,no)=>{const r=d.transaction("f").objectStore("f").get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 async function idbDel(k){const d=await idb();d.transaction("f","readwrite").objectStore("f").delete(k)}
+const CH=700000,MAXB=5*1024*1024;
+const fpath=fid=>"users/"+uid+"/files/"+fid;
+const b64=b=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(",")[1]);r.onerror=()=>no(r.error);r.readAsDataURL(b)});
+function shrink(f){
+  if(!/^image\/(jpeg|png|webp)$/.test(f.type)||f.size<600000)return Promise.resolve(f);
+  return new Promise(ok=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1800/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*k;c.height=i.height*k;c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(b=>ok(b||f),"image/jpeg",.8)};i.onerror=()=>ok(f);i.src=URL.createObjectURL(f)});
+}
 async function addFiles(id,fs){
-  for(const f of fs){const fid=newId();try{await idbPut(fid,f);C(id).docs.push({n:f.name,fid})}catch(e){alert("File save aagala: "+e.message)}}
+  const c=C(id),st=$("#up");
+  for(let f of fs){
+    const nm=f.name;
+    try{
+      if(!db){const fid=newId();await idbPut(fid,f);c.docs.push({n:nm,fid});continue}
+      if(st)st.textContent="Uploading "+nm+"...";
+      f=await shrink(f);
+      if(f.size>MAXB){alert(nm+" 5 MB-ku mela irukku. Compress pannitu thirumba upload pannunga.");continue}
+      const s64=await b64(f),fid=newId(),n=Math.ceil(s64.length/CH);
+      for(let i=0;i<n;i++)await db.doc(fpath(fid)+"/c/"+String(i).padStart(4,"0")).set({d:s64.slice(i*CH,(i+1)*CH)});
+      await db.doc(fpath(fid)).set({n:nm,t:f.type,k:n});
+      c.docs.push({n:nm,fid,cloud:1,t:f.type});
+    }catch(e){alert("Upload aagala: "+e.message)}
+  }
   save();render();
 }
 async function openDoc(id,i){
   const d=C(id).docs[i];
   if(d.url)return window.open(d.url,"_blank","noopener");
-  const f=await idbGet(d.fid);if(!f)return alert("Indha file inga illa. Vera phone/browser-la upload pannirukkalaam.");
-  const a=document.createElement("a");a.href=URL.createObjectURL(f);a.target="_blank";a.rel="noopener";a.click();
+  const t0=Date.now();let blob;
+  try{
+    if(d.cloud){
+      const r=await db.collection(fpath(d.fid)+"/c").get();
+      const bin=atob(r.docs.sort((a,b)=>a.id.localeCompare(b.id)).map(x=>x.data().d).join("")),u=new Uint8Array(bin.length);
+      for(let k=0;k<bin.length;k++)u[k]=bin.charCodeAt(k);
+      blob=new Blob([u],{type:d.t||"application/octet-stream"});
+    }else blob=await idbGet(d.fid);
+  }catch(e){return alert("File open aagala: "+e.message)}
+  if(!blob)return alert("Indha file inga illa. Vera phone/browser-la upload pannirukkalaam.");
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  if(Date.now()-t0>4000)a.download=d.n;else{a.target="_blank";a.rel="noopener"}
+  a.click();
 }
-function delDoc(id,i){if(confirm("Remove this document?")){const d=C(id).docs[i];if(d.fid)idbDel(d.fid);C(id).docs.splice(i,1);save();render()}}
+async function delDoc(id,i){
+  if(!confirm("Remove this document?"))return;
+  const c=C(id),d=c.docs[i];
+  try{
+    if(d.cloud){const r=await db.collection(fpath(d.fid)+"/c").get();await Promise.all(r.docs.map(x=>x.ref.delete()));await db.doc(fpath(d.fid)).delete()}
+    else if(d.fid)idbDel(d.fid);
+  }catch(e){}
+  c.docs.splice(i,1);save();render();
+}
 function delC(id){if(confirm("Delete this entry and all updates?")){S[kind]=S[kind].filter(x=>x.id!=id);save();cur=null;render()}}
 
 /* ---------- Travel ---------- */
