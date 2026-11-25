@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Darling Solar - Chan's Report</title>
+<meta name="theme-color" content="#0e0e12">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☀️</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#0e0e12;--card:#1a1a20;--line:#3b3b45;--tx:#e8e8ee;--mut:#a3a3b0;--ac:#d9b44a;--red:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 Inter,system-ui,sans-serif;padding:0 14px 90px}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;margin:.4em 0}
+h1{font-size:26px;background:linear-gradient(90deg,#f5f5f8,#b8b8c4);-webkit-background-clip:text;background-clip:text;color:transparent}h3{font-size:18px;margin-top:20px;color:var(--ac)}
+header{margin:0 -14px;padding:18px 14px 8px;background:radial-gradient(circle at 92% 0,rgba(217,180,74,.25),transparent 55%)}header span{color:var(--ac);font-size:14px}.brand{display:flex;gap:10px;align-items:center}.brand b{font:600 17px Fraunces,Georgia,serif}.brand small{display:block;color:var(--ac);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:8px 0}
+label{display:block;color:var(--mut);font-size:13px;margin:8px 0}
+input,select,textarea{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin-top:4px}
+textarea{min-height:80px}
+input[type=radio],input[type=checkbox]{width:auto;margin:0 8px 0 0}
+button,.btn{background:linear-gradient(135deg,#f1d980,#c9a227);color:#1a1405;border:0;border-radius:10px;padding:10px 16px;font:500 15px Inter,sans-serif;margin-top:8px;text-decoration:none;display:inline-block;cursor:pointer}
+button.ghost{background:none;color:var(--ac);border:1px solid var(--line)}
+button.x{background:none;color:var(--red);padding:4px 10px;margin:0}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}
+.row2{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.row2 a{color:var(--tx)}
+.item{cursor:pointer}.item b{font-size:17px}.item small{display:block;color:var(--mut)}
+.late{color:var(--ac)}
+.stp{display:flex;align-items:center;color:var(--tx);font-size:15px;padding:6px 0}
+.bar{height:6px;background:var(--bg);border-radius:4px;overflow:hidden;margin-bottom:8px}.bar i{display:block;height:100%;background:var(--ac)}
+.note{margin:8px 0 0;font-size:15px}.note b{color:var(--ac);margin-right:6px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0f111a;border-top:1px solid var(--line)}
+nav button{flex:1;background:none;color:var(--mut);border-radius:0;margin:0;padding:16px 4px}
+nav button.on{color:var(--ac)}
+.empty{color:var(--mut);text-align:center;padding:24px 0}
+</style></head><body>
+<div id="app"></div>
+<nav><button data-v="cust" onclick="go('cust')">Customers</button><button data-v="fu" onclick="go('fu')">Follow-ups</button><button data-v="trav" onclick="go('trav')">Travel</button><button data-v="set" onclick="go('set')">Settings</button></nav>
+<script>
+// ===== Firebase config: leave empty to test (data saves in this browser only). Paste your keys here later. =====
+const FB={apiKey:"",authDomain:"",projectId:"",appId:""};
+
+const BR="AKMPOS1 PDYPOS1 TMGPOS1 ARNPOS1 KPMPOS1 KTRPOS1 KPDPOS1 TVMPOS1 VLRPOS1 EDPPOS1 KCPPOS1 KPTPOS1 OMLPOS1 PVLPOS1 SKIPOS1 SKNPOS1 KKCPOS1 VPMPOS3 MDVPOS1 NKLPOS1 SLMPOS3 TPTPOS1 VLRPOS3 TNRPOS1 TBMPOS1 CPTPOS2 CSLPOS1 KDRPOS1 KRGPOS2 PANRUTI RSPPOS1 SGRPOS1".split(" ");
+const RS=["Price","EB bill name issue","Subsidy confusion","Finance / loan","Roof / space","Comparing other vendors","Not responding","Family not agreeing","Other"];
+const DEF={settings:{name:"HEMACHANDER",emp:"",dept:"Solar",desig:"Solar Coordinator",branch:"PDYPOS1",
+steps:["Registration (Consumer)","Application (Consumer)","Feasibility (Discom)","Vendor Selection (Consumer)","Upload Agreement (Vendor)","Installation (Vendor)","Inspection (Discom)","Project Commissioning (Discom)","Subsidy Request (Consumer)","Subsidy Disbursal (REC)"].join("\n")},customers:[],expenses:[]};
+
+let S,db,uid,view="cust",cur=null,q="",fr="";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const iso=d=>new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const today=()=>iso(new Date());
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const steps=()=>S.settings.steps.split("\n").map(x=>x.trim()).filter(Boolean);
+const fmt=d=>d?d.split("-").reverse().join("-"):"";
+function defRange(){const n=new Date();return[iso(new Date(n.getFullYear(),n.getMonth()-1,27)),iso(new Date(n.getFullYear(),n.getMonth(),24))]}
+let R=defRange();
+
+function save(){
+  if(db)db.doc("users/"+uid).set(S).catch(e=>alert("Save failed: "+e.message));
+  else localStorage.setItem("chan",JSON.stringify(S));
+}
+async function load(){
+  let d=null;
+  if(db){const x=await db.doc("users/"+uid).get();d=x.exists?x.data():null}
+  else d=JSON.parse(localStorage.getItem("chan")||"null");
+  S=Object.assign(structuredClone(DEF),d||{});
+  S.settings=Object.assign({},DEF.settings,(d&&d.settings)||{});
+}
+function loginView(){
+  $("#app").innerHTML=`<h1 style="margin-top:40px">Chan's Report</h1><div class=card><label>Email<input id=em type=email></label><label>Password<input id=pw type=password></label><button onclick="auth(0)">Sign in</button> <button class=ghost onclick="auth(1)">Create account</button></div>`;
+}
+function auth(n){
+  const a=firebase.auth(),e=$("#em").value,p=$("#pw").value;
+  (n?a.createUserWithEmailAndPassword(e,p):a.signInWithEmailAndPassword(e,p)).catch(x=>alert(x.message));
+}
+if(FB.apiKey){
+  firebase.initializeApp(FB);
+  firebase.auth().onAuthStateChanged(async u=>{
+    if(u){uid=u.uid;db=firebase.firestore();await load();render()}else loginView();
+  });
+}else load().then(render);
+
+const LOGO=`<svg width=46 height=46 viewBox="0 0 48 48"><circle cx=24 cy=15 r=8 fill="#d9b44a"/><path d="M24 2v3M10 7l2 2M38 7l-2 2M4 15h3M41 15h3" stroke="#d9b44a" stroke-width=2.5 stroke-linecap=round /><path d="M6 42l5-17h26l5 17z" fill="#9a9ca6" stroke="#d9b44a" stroke-width=2 /><path d="M24 25v17M9 33.5h30M15.5 25l-3 17M32.5 25l3 17" stroke="#d9b44a" stroke-width=1.2 /></svg>`;
+const head=t=>`<header><div class=brand>${LOGO}<div><b>Darling Digital World</b><small>Solar</small></div></div><h1>${t}</h1><span>${esc(S.settings.name)} · ${esc(S.settings.branch)}</span></header>`;
+function go(v){view=v;cur=null;render()}
+function render(){
+  $("#app").innerHTML=views[view]();
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v==view));
+}
+const views={};
+
+/* ---------- Customers ---------- */
+function list(){
+  const k=q.toLowerCase(),L=S.customers.filter(c=>(c.name+" "+c.phone).toLowerCase().includes(k));
+  if(!L.length)return`<div class=empty>${S.customers.length?"No match":"No customers yet. Tap New customer."}</div>`;
+  const st=steps();
+  return L.map(c=>`<div class="card item" onclick="openC('${c.id}')"><b>${esc(c.name)}</b><small>${c.conv?"Converted · ":""}Step ${c.step}/${st.length}: ${esc(st[c.step-1]||"")}</small></div>`).join("");
+}
+views.cust=()=>{
+  if(cur)return detail();
+  return head("Customers")+`<input placeholder="Search name or phone" value="${esc(q)}" oninput="q=this.value;$('#list').innerHTML=list()"><button onclick="newC()">+ New customer</button><div id=list>${list()}</div>`;
+};
+function newC(){
+  const n=prompt("Customer name");if(!n)return;
+  const c={id:newId(),name:n.trim(),phone:"",addr:"",kw:"",eb:"",branch:S.settings.branch,step:1,next:"",fu:"",reason:"",conv:false,notes:[],docs:[],created:today()};
+  S.customers.push(c);save();cur=c.id;render();
+}
+function openC(id){view="cust";cur=id;render();scrollTo(0,0)}
+const C=id=>S.customers.find(x=>x.id==id);
+function upd(id,k,v,r){C(id)[k]=v;save();if(r)render()}
+const fld=(c,k,l,t)=>`<label>${l}<input type=${t||"text"} value="${esc(c[k])}" onchange="upd('${c.id}','${k}',this.value)"></label>`;
+function detail(){
+  const c=C(cur),st=steps(),n=st.length,ph=(c.phone||"").replace(/\D/g,"").slice(-10);
+  return`<button class=ghost onclick="cur=null;render()">← Back</button><h2>${esc(c.name)}</h2>
+<div class=card>${fld(c,"name","Name")}${fld(c,"phone","Phone","tel")}${fld(c,"addr","Address")}${fld(c,"kw","kW capacity")}${fld(c,"eb","EB bill name")}${fld(c,"branch","Branch")}
+${ph?`<div class=row><a class=btn href="tel:${ph}">Call</a><a class=btn href="https://wa.me/91${ph}" target=_blank rel=noopener>WhatsApp</a></div>`:""}</div>
+<h3>PMSGP progress</h3><div class=card><div class=bar><i style="width:${c.step/n*100}%"></i></div>
+${st.map((t,i)=>`<label class=stp><input type=radio name=s ${c.step==i+1?"checked":""} onchange="upd('${c.id}','step',${i+1},1)">${i+1}. ${esc(t)}${i+1<c.step?" ✓":""}</label>`).join("")}
+${fld(c,"next","What to do next")}</div>
+<h3>Follow-up</h3><div class=card>
+<label class=stp><input type=checkbox ${c.conv?"checked":""} onchange="upd('${c.id}','conv',this.checked,1)">Converted</label>
+${fld(c,"fu","Next follow-up date","date")}
+<label>Reason not converted<select onchange="upd('${c.id}','reason',this.value)"><option value="">-</option>${RS.map(r=>`<option ${c.reason==r?"selected":""}>${r}</option>`).join("")}</select></label></div>
+<h3>Documents</h3><div class=card>${c.docs.map((d,i)=>`<div class=row2><a href="${esc(d.url)}" target=_blank rel=noopener>📄 ${esc(d.n)}</a><button class=x onclick="delDoc('${c.id}',${i})">×</button></div>`).join("")}<button class=ghost onclick="addDoc('${c.id}')">+ Add Drive link</button></div>
+<h3>Updates</h3><div class=card><textarea id=nt placeholder="Today's update"></textarea><button onclick="addNote('${c.id}')">Add update</button>${[...c.notes].reverse().map(x=>`<p class=note><b>${fmt(x.d)}</b>${esc(x.t)}</p>`).join("")}</div>
+<button class=ghost style="color:var(--red)" onclick="delC('${c.id}')">Delete customer</button>`;
+}
+function addNote(id){const t=$("#nt").value.trim();if(!t)return;C(id).notes.push({d:today(),t});save();render()}
+function addDoc(id){
+  const n=prompt("Document name (Aadhaar, EB bill, Agreement...)");if(!n)return;
+  const u=prompt("Paste Google Drive link");if(!u)return;
+  if(!/^https?:\/\//i.test(u))return alert("Link http:// or https:// nu start aaganum");
+  C(id).docs.push({n,url:u});save();render();
+}
+function delDoc(id,i){if(confirm("Remove this document link?")){C(id).docs.splice(i,1);save();render()}}
+function delC(id){if(confirm("Delete this customer and all updates?")){S.customers=S.customers.filter(x=>x.id!=id);save();cur=null;render()}}
+
+/* ---------- Follow-ups ---------- */
+views.fu=()=>{
+  const L=S.customers.filter(c=>!c.conv&&(!fr||c.reason==fr)).sort((a,b)=>(a.fu||"9").localeCompare(b.fu||"9"));
+  return head("Follow-ups")+`<select onchange="fr=this.value;render()"><option value="">All reasons</option>${RS.map(r=>`<option ${fr==r?"selected":""}>${r}</option>`).join("")}</select>`+
+  (L.length?L.map(c=>`<div class="card item" onclick="openC('${c.id}')"><b>${esc(c.name)}</b> <small>${esc(c.phone)}</small><small>${esc(c.reason||"No reason yet")}</small><small class="${c.fu&&c.fu<=today()?"late":""}">${c.fu?"Follow-up: "+fmt(c.fu):"No date set"}</small></div>`).join(""):`<div class=empty>No pending follow-ups</div>`);
+};
+
+/* ---------- Travel ---------- */
+const inRange=()=>S.expenses.filter(e=>e.d>=R[0]&&e.d<=R[1]).sort((a,b)=>a.d.localeCompare(b.d));
+function tlist(){
+  const L=inRange();
+  if(!L.length)return`<div class=empty>No entries in this range</div>`;
+  return L.map(e=>`<div class=row2><span>${fmt(e.d)} · ${esc(e.loc)}</span><span>₹${e.amt} <button class=x onclick="delExp('${e.id}')">×</button></span></div>`).join("")+`<div class=row2><b>Total</b><b>₹${L.reduce((s,e)=>s+e.amt,0)}</b></div>`;
+}
+views.trav=()=>head("Travel expenses")+`<div class=card><label>Type like: 24-11 villivakkam petrol 100<input id=tt placeholder="villivakkam petrol 100" onkeydown="if(event.key=='Enter')addExp()"></label><button onclick="addExp()">Add</button></div>
+<div class=card><div class=row><label>From<input type=date value="${R[0]}" onchange="R[0]=this.value;$('#tl').innerHTML=tlist()"></label><label>To<input type=date value="${R[1]}" onchange="R[1]=this.value;$('#tl').innerHTML=tlist()"></label></div><div id=tl>${tlist()}</div><button onclick="xl()">Download Excel</button></div>`;
+function addExp(){
+  const t=$("#tt").value.trim();if(!t)return;
+  let d=today();const w=t.split(/\s+/),di=w.findIndex(x=>/^\d{1,2}[-\/.]\d{1,2}([-\/.]\d{2,4})?$/.test(x));
+  if(di>=0){const p=w.splice(di,1)[0].split(/[-\/.]/),y=p[2]?(p[2].length<3?2000+ +p[2]:+p[2]):new Date().getFullYear();d=y+"-"+p[1].padStart(2,"0")+"-"+p[0].padStart(2,"0")}
+  const ni=w.map(x=>/^\d+(\.\d+)?$/.test(x)).lastIndexOf(true);
+  if(ni<0)return alert("Amount type pannunga. Example: villivakkam petrol 100");
+  const amt=+w.splice(ni,1)[0],loc=w.filter(x=>!/^(petrol|fuel|diesel)$/i.test(x)).join(" ");
+  S.expenses.push({id:newId(),d,loc:loc||"-",amt});save();render();
+}
+function delExp(id){S.expenses=S.expenses.filter(e=>e.id!=id);save();$("#tl").innerHTML=tlist()}
+function xl(){
+  const L=inRange(),s=S.settings;if(!L.length)return alert("This range-la entry illa");
+  const dt=x=>new Date(x+"T00:00:00"),me=x=>{const d=dt(x);return new Date(d.getFullYear(),d.getMonth()+1,0)};
+  const rows=[["Travel Expense Report"+(s.branch?" - "+s.branch:"")],["Date","Month","Name","Employee Id","Department","Location visit","Working Days","Fuel/Petrol","Bills","Total"]];
+  L.forEach(e=>rows.push([dt(e.d),me(e.d),s.name,s.emp,s.dept,e.loc.toUpperCase(),1,e.amt,"YES",null]));
+  const ws=XLSX.utils.aoa_to_sheet(rows,{cellDates:true});
+  L.forEach((e,i)=>{const r=i+3;ws["J"+r]={t:"n",f:"H"+r,v:e.amt};ws["A"+r].z=ws["B"+r].z="dd-mm-yyyy"});
+  const r=L.length+3,tot=L.reduce((a,e)=>a+e.amt,0);
+  ws["I"+r]={t:"s",v:"Total"};ws["H"+r]={t:"n",f:`SUM(H3:H${r-1})`,v:tot};ws["J"+r]={t:"n",f:`SUM(J3:J${r-1})`,v:tot};
+  ws["!ref"]="A1:J"+r;ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:7}}];
+  ws["!cols"]=[12,12,18,12,12,34,12,12,8,10].map(w=>({wch:w}));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Travel Expense");
+  XLSX.writeFile(wb,`Travel_Expenses_${R[0]}_to_${R[1]}.xlsx`);
+}
+
+/* ---------- Settings ---------- */
+const sf=(k,l,x="")=>`<label>${l}<input value="${esc(S.settings[k])}" ${x} onchange="S.settings['${k}']=this.value;save()"></label>`;
+views.set=()=>head("Settings")+`<div class=card>${sf("name","Name")}${sf("emp","Employee Id")}${sf("dept","Department")}${sf("desig","Designation")}
+<label>Branch<input list=brs value="${esc(S.settings.branch)}" onchange="S.settings.branch=this.value;save();render()"></label><datalist id=brs>${BR.map(b=>`<option>${b}</option>`).join("")}</datalist></div>
+<h3>PMSGP steps (one per line)</h3><div class=card><textarea style="min-height:260px" onchange="S.settings.steps=this.value;save();render()">${esc(S.settings.steps)}</textarea></div>
+<button class=ghost onclick="backup()">Download backup (JSON)</button>${FB.apiKey?` <button class=ghost onclick="firebase.auth().signOut()">Sign out</button>`:""}`;
+function backup(){
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));a.download="chan-report-backup-"+today()+".json";a.click();
+}
+</script></body></html>
