@@ -3,6 +3,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Darling Solar - Chan's Report</title>
 <meta name="theme-color" content="#0e0e12">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☀️</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -46,7 +48,7 @@ const FB={apiKey:"",authDomain:"",projectId:"",appId:""};
 const BR="AKMPOS1 PDYPOS1 TMGPOS1 ARNPOS1 KPMPOS1 KTRPOS1 KPDPOS1 TVMPOS1 VLRPOS1 EDPPOS1 KCPPOS1 KPTPOS1 OMLPOS1 PVLPOS1 SKIPOS1 SKNPOS1 KKCPOS1 VPMPOS3 MDVPOS1 NKLPOS1 SLMPOS3 TPTPOS1 VLRPOS3 TNRPOS1 TBMPOS1 CPTPOS2 CSLPOS1 KDRPOS1 KRGPOS2 PANRUTI RSPPOS1 SGRPOS1".split(" ");
 const RS=["Price","EB bill name issue","Subsidy confusion","Finance / loan","Roof / space","Comparing other vendors","Not responding","Family not agreeing","Other"];
 const DEF={settings:{name:"HEMACHANDER",emp:"",dept:"Solar",desig:"Solar Coordinator",branch:"PDYPOS1",
-steps:["Registration (Consumer)","Application (Consumer)","Feasibility (Discom)","Vendor Selection (Consumer)","Upload Agreement (Vendor)","Installation (Vendor)","Inspection (Discom)","Project Commissioning (Discom)","Subsidy Request (Consumer)","Subsidy Disbursal (REC)"].join("\n")},customers:[],expenses:[]};
+steps:["Registration (Consumer)","Application (Consumer)","Feasibility (Discom)","Vendor Selection (Consumer)","Upload Agreement (Vendor)","Installation (Vendor)","Inspection (Discom)","Project Commissioning (Discom)","Subsidy Request (Consumer)","Subsidy Disbursal (REC)"].join("\n")},customers:[],leads:[],expenses:[]};
 
 let S,db,uid,view="cust",cur=null,q="",fr="";
 const $=s=>document.querySelector(s);
@@ -86,48 +88,56 @@ if(FB.apiKey){
 
 const LOGO=`<svg width=46 height=46 viewBox="0 0 48 48"><circle cx=24 cy=15 r=8 fill="#d9b44a"/><path d="M24 2v3M10 7l2 2M38 7l-2 2M4 15h3M41 15h3" stroke="#d9b44a" stroke-width=2.5 stroke-linecap=round /><path d="M6 42l5-17h26l5 17z" fill="#9a9ca6" stroke="#d9b44a" stroke-width=2 /><path d="M24 25v17M9 33.5h30M15.5 25l-3 17M32.5 25l3 17" stroke="#d9b44a" stroke-width=1.2 /></svg>`;
 const head=t=>`<header><div class=brand>${LOGO}<div><b>Darling Digital World</b><small>Solar</small></div></div><h1>${t}</h1><span>${esc(S.settings.name)} · ${esc(S.settings.branch)}</span></header>`;
-function go(v){view=v;cur=null;render()}
+function go(v){view=v;cur=null;q="";fr="";render()}
 function render(){
   $("#app").innerHTML=views[view]();
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v==view));
 }
 const views={};
 
-/* ---------- Customers ---------- */
+/* ---------- Customers and Follow-ups (two separate lists) ---------- */
+let kind="customers";
+const C=id=>S[kind].find(x=>x.id==id);
 function list(){
-  const k=q.toLowerCase(),L=S.customers.filter(c=>(c.name+" "+c.phone).toLowerCase().includes(k));
-  if(!L.length)return`<div class=empty>${S.customers.length?"No match":"No customers yet. Tap New customer."}</div>`;
-  const st=steps();
-  return L.map(c=>`<div class="card item" onclick="openC('${c.id}')"><b>${esc(c.name)}</b><small>${c.conv?"Converted · ":""}Step ${c.step}/${st.length}: ${esc(st[c.step-1]||"")}</small></div>`).join("");
+  const k=q.toLowerCase(),lead=kind=="leads",st=steps();
+  const A=S[kind].filter(c=>(c.name+" "+c.phone).toLowerCase().includes(k)&&(!lead||!fr||c.reason==fr));
+  if(lead)A.sort((a,b)=>(a.fu||"9").localeCompare(b.fu||"9"));
+  if(!A.length)return`<div class=empty>${S[kind].length?"No match":"Nothing here yet. Tap the New button."}</div>`;
+  return A.map(c=>`<div class="card item" onclick="openC('${c.id}')"><b>${esc(c.name)}</b><small>${esc(c.phone)}</small>`+(lead?`<small>${esc(c.reason||"No reason yet")}</small><small class="${c.fu&&c.fu<=today()?"late":""}">${c.fu?"Follow-up: "+fmt(c.fu):"No date set"}</small>`:`<small>Step ${c.step}/${st.length}: ${esc(st[c.step-1]||"")}</small>`)+`</div>`).join("");
 }
-views.cust=()=>{
-  if(cur)return detail();
-  return head("Customers")+`<input placeholder="Search name or phone" value="${esc(q)}" oninput="q=this.value;$('#list').innerHTML=list()"><button onclick="newC()">+ New customer</button><div id=list>${list()}</div>`;
-};
+function listView(title,btn){
+  return head(title)+`<input placeholder="Search name or phone" value="${esc(q)}" oninput="q=this.value;$('#list').innerHTML=list()">`+
+  (kind=="leads"?`<select onchange="fr=this.value;$('#list').innerHTML=list()"><option value="">All reasons</option>${RS.map(r=>`<option ${fr==r?"selected":""}>${r}</option>`).join("")}</select>`:"")+
+  `<button onclick="newC()">${btn}</button><div id=list>${list()}</div>`;
+}
+views.cust=()=>{kind="customers";return cur?detail():listView("Customers","+ New customer")};
+views.fu=()=>{kind="leads";return cur?detail():listView("Follow-ups","+ New follow-up")};
 function newC(){
   const n=prompt("Customer name");if(!n)return;
-  const c={id:newId(),name:n.trim(),phone:"",addr:"",kw:"",eb:"",branch:S.settings.branch,step:1,next:"",fu:"",reason:"",conv:false,notes:[],docs:[],created:today()};
-  S.customers.push(c);save();cur=c.id;render();
+  const c={id:newId(),name:n.trim(),phone:"",email:"",addr:"",kw:"",eb:"",branch:S.settings.branch,notes:[],docs:[],created:today()};
+  if(kind=="leads"){c.reason="";c.fu=""}else{c.step=1;c.next=""}
+  S[kind].push(c);save();cur=c.id;render();
 }
-function openC(id){view="cust";cur=id;render();scrollTo(0,0)}
-const C=id=>S.customers.find(x=>x.id==id);
+function openC(id){cur=id;render();scrollTo(0,0)}
 function upd(id,k,v,r){C(id)[k]=v;save();if(r)render()}
 const fld=(c,k,l,t)=>`<label>${l}<input type=${t||"text"} value="${esc(c[k])}" onchange="upd('${c.id}','${k}',this.value)"></label>`;
 function detail(){
-  const c=C(cur),st=steps(),n=st.length,ph=(c.phone||"").replace(/\D/g,"").slice(-10);
-  return`<button class=ghost onclick="cur=null;render()">← Back</button><h2>${esc(c.name)}</h2>
-<div class=card>${fld(c,"name","Name")}${fld(c,"phone","Phone","tel")}${fld(c,"addr","Address")}${fld(c,"kw","kW capacity")}${fld(c,"eb","EB bill name")}${fld(c,"branch","Branch")}
-${ph?`<div class=row><a class=btn href="tel:${ph}">Call</a><a class=btn href="https://wa.me/91${ph}" target=_blank rel=noopener>WhatsApp</a></div>`:""}</div>
-<h3>PMSGP progress</h3><div class=card><div class=bar><i style="width:${c.step/n*100}%"></i></div>
+  const c=C(cur),st=steps(),n=st.length,lead=kind=="leads",ph=(c.phone||"").replace(/\D/g,"").slice(-10);
+  const top=`<button class=ghost onclick="cur=null;render()">← Back</button><h2>${esc(c.name)}</h2>
+<div class=card>${fld(c,"name","Name")}${fld(c,"phone","Phone","tel")}${fld(c,"email","Email","email")}${fld(c,"addr","Address")}${fld(c,"kw","kW capacity")}${fld(c,"eb","EB bill number")}${fld(c,"branch","Branch")}
+<div class=row>${ph?`<a class=btn href="tel:${ph}">Call</a><a class=btn href="https://wa.me/91${ph}" target=_blank rel=noopener>WhatsApp</a>`:""}${c.email?`<a class=btn href="mailto:${esc(c.email)}">Email</a>`:""}</div></div>`;
+  const mid=lead?`<h3>Follow-up</h3><div class=card>${fld(c,"fu","Next follow-up date","date")}
+<label>Reason not converted<select onchange="upd('${c.id}','reason',this.value)"><option value="">-</option>${RS.map(r=>`<option ${c.reason==r?"selected":""}>${r}</option>`).join("")}</select></label></div>`
+  :`<h3>PMSGP progress</h3><div class=card><div class=bar><i style="width:${c.step/n*100}%"></i></div>
 ${st.map((t,i)=>`<label class=stp><input type=radio name=s ${c.step==i+1?"checked":""} onchange="upd('${c.id}','step',${i+1},1)">${i+1}. ${esc(t)}${i+1<c.step?" ✓":""}</label>`).join("")}
-${fld(c,"next","What to do next")}</div>
-<h3>Follow-up</h3><div class=card>
-<label class=stp><input type=checkbox ${c.conv?"checked":""} onchange="upd('${c.id}','conv',this.checked,1)">Converted</label>
-${fld(c,"fu","Next follow-up date","date")}
-<label>Reason not converted<select onchange="upd('${c.id}','reason',this.value)"><option value="">-</option>${RS.map(r=>`<option ${c.reason==r?"selected":""}>${r}</option>`).join("")}</select></label></div>
-<h3>Documents</h3><div class=card>${c.docs.map((d,i)=>`<div class=row2><a href="${esc(d.url)}" target=_blank rel=noopener>📄 ${esc(d.n)}</a><button class=x onclick="delDoc('${c.id}',${i})">×</button></div>`).join("")}<button class=ghost onclick="addDoc('${c.id}')">+ Add Drive link</button></div>
-<h3>Updates</h3><div class=card><textarea id=nt placeholder="Today's update"></textarea><button onclick="addNote('${c.id}')">Add update</button>${[...c.notes].reverse().map(x=>`<p class=note><b>${fmt(x.d)}</b>${esc(x.t)}</p>`).join("")}</div>
-<button class=ghost style="color:var(--red)" onclick="delC('${c.id}')">Delete customer</button>`;
+${fld(c,"next","What to do next")}</div>`;
+  const docs=`<h3>Documents</h3><div class=card>${c.docs.map((d,i)=>`<div class=row2><a href="#" onclick="openDoc('${c.id}',${i});return false">📄 ${esc(d.n)}</a><button class=x onclick="delDoc('${c.id}',${i})">×</button></div>`).join("")}
+<input type=file id=fi multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style="display:none" onchange="addFiles('${c.id}',this.files)">
+<div class=row><button class=ghost onclick="$('#fi').click()">+ Upload file</button><button class=ghost onclick="addDoc('${c.id}')">+ Drive link</button></div>
+<label>Uploaded files stay on this phone only. Drive links open anywhere.</label></div>`;
+  const notes=`<h3>Updates</h3><div class=card><textarea id=nt placeholder="Today's update"></textarea><button onclick="addNote('${c.id}')">Add update</button>${[...c.notes].reverse().map(x=>`<p class=note><b>${fmt(x.d)}</b>${esc(x.t)}</p>`).join("")}</div>
+<button class=ghost style="color:var(--red)" onclick="delC('${c.id}')">Delete</button>`;
+  return top+mid+docs+notes;
 }
 function addNote(id){const t=$("#nt").value.trim();if(!t)return;C(id).notes.push({d:today(),t});save();render()}
 function addDoc(id){
@@ -136,15 +146,22 @@ function addDoc(id){
   if(!/^https?:\/\//i.test(u))return alert("Link http:// or https:// nu start aaganum");
   C(id).docs.push({n,url:u});save();render();
 }
-function delDoc(id,i){if(confirm("Remove this document link?")){C(id).docs.splice(i,1);save();render()}}
-function delC(id){if(confirm("Delete this customer and all updates?")){S.customers=S.customers.filter(x=>x.id!=id);save();cur=null;render()}}
-
-/* ---------- Follow-ups ---------- */
-views.fu=()=>{
-  const L=S.customers.filter(c=>!c.conv&&(!fr||c.reason==fr)).sort((a,b)=>(a.fu||"9").localeCompare(b.fu||"9"));
-  return head("Follow-ups")+`<select onchange="fr=this.value;render()"><option value="">All reasons</option>${RS.map(r=>`<option ${fr==r?"selected":""}>${r}</option>`).join("")}</select>`+
-  (L.length?L.map(c=>`<div class="card item" onclick="openC('${c.id}')"><b>${esc(c.name)}</b> <small>${esc(c.phone)}</small><small>${esc(c.reason||"No reason yet")}</small><small class="${c.fu&&c.fu<=today()?"late":""}">${c.fu?"Follow-up: "+fmt(c.fu):"No date set"}</small></div>`).join(""):`<div class=empty>No pending follow-ups</div>`);
-};
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open("chanfiles",1);r.onupgradeneeded=()=>r.result.createObjectStore("f");r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+async function idbPut(k,v){const d=await idb();return new Promise((ok,no)=>{const t=d.transaction("f","readwrite");t.objectStore("f").put(v,k);t.oncomplete=ok;t.onerror=()=>no(t.error)})}
+async function idbGet(k){const d=await idb();return new Promise((ok,no)=>{const r=d.transaction("f").objectStore("f").get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+async function idbDel(k){const d=await idb();d.transaction("f","readwrite").objectStore("f").delete(k)}
+async function addFiles(id,fs){
+  for(const f of fs){const fid=newId();try{await idbPut(fid,f);C(id).docs.push({n:f.name,fid})}catch(e){alert("File save aagala: "+e.message)}}
+  save();render();
+}
+async function openDoc(id,i){
+  const d=C(id).docs[i];
+  if(d.url)return window.open(d.url,"_blank","noopener");
+  const f=await idbGet(d.fid);if(!f)return alert("Indha file inga illa. Vera phone/browser-la upload pannirukkalaam.");
+  const a=document.createElement("a");a.href=URL.createObjectURL(f);a.target="_blank";a.rel="noopener";a.click();
+}
+function delDoc(id,i){if(confirm("Remove this document?")){const d=C(id).docs[i];if(d.fid)idbDel(d.fid);C(id).docs.splice(i,1);save();render()}}
+function delC(id){if(confirm("Delete this entry and all updates?")){S[kind]=S[kind].filter(x=>x.id!=id);save();cur=null;render()}}
 
 /* ---------- Travel ---------- */
 const inRange=()=>S.expenses.filter(e=>e.d>=R[0]&&e.d<=R[1]).sort((a,b)=>a.d.localeCompare(b.d));
@@ -189,4 +206,5 @@ views.set=()=>head("Settings")+`<div class=card>${sf("name","Name")}${sf("emp","
 function backup(){
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,1)],{type:"application/json"}));a.download="chan-report-backup-"+today()+".json";a.click();
 }
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script></body></html>
